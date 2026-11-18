@@ -17,18 +17,29 @@ local UserInputService = game:GetService("UserInputService")
 local Lighting = game:GetService("Lighting")
 local LocalPlayer = Players.LocalPlayer
 
--- Instant Proximity Prompt Hooker (Forces all prompts to have 0 hold duration)
+-- ==================== GLOBAL STATE ====================
+local GlobalState = {
+    HitboxEnabled = false,
+    HitboxVisual = false,
+    HitboxSize = 25,
+    AutoDesoOrb = true,
+    InstantPromptsEnabled = false -- Controlled by toggle in Player tab
+}
+
+-- Proximity Prompt Hooker (Runs only when enabled)
 task.spawn(function()
     while true do
-        pcall(function()
-            for _, descendant in ipairs(Workspace:GetDescendants()) do
-                if descendant:IsA("ProximityPrompt") then
-                    descendant.HoldDuration = 0
-                    descendant.MaxActivationDistance = 999999
-                    descendant.RequiresLineOfSight = false
+        if GlobalState.InstantPromptsEnabled then
+            pcall(function()
+                for _, descendant in ipairs(Workspace:GetDescendants()) do
+                    if descendant:IsA("ProximityPrompt") then
+                        descendant.HoldDuration = 0
+                        descendant.MaxActivationDistance = 999999
+                        descendant.RequiresLineOfSight = false
+                    end
                 end
-            end
-        end)
+            end)
+        end
         task.wait(1)
     end
 end)
@@ -50,14 +61,6 @@ local safeFireTouchInterest = firetouchinterest or function(PartToTouch, TouchWi
         end
     end
 end
-
--- ==================== GLOBAL STATE & DESOLATION ORB AUTO-SNIPE ====================
-local GlobalState = {
-    HitboxEnabled = false,
-    HitboxVisual = false,
-    HitboxSize = 25, -- Safe default size
-    AutoDesoOrb = true
-}
 
 local function snipeDesolationOrb(orbObj)
     if not GlobalState.AutoDesoOrb then return end
@@ -94,7 +97,7 @@ local function snipeDesolationOrb(orbObj)
 end
 
 Workspace.DescendantAdded:Connect(function(descendant)
-    if descendant:IsA("ProximityPrompt") then
+    if descendant:IsA("ProximityPrompt") and GlobalState.InstantPromptsEnabled then
         pcall(function()
             descendant.HoldDuration = 0
             descendant.MaxActivationDistance = 999999
@@ -708,15 +711,15 @@ if Rayfield then
     local Window = Rayfield:CreateWindow({ Name = "Voide Hub", LoadingTitle = "Loading Voide Hub...", ConfigurationSaving = { Enabled = false }, KeySystem = false })
     
     -- MAIN HUB TAB (Icon: Dashboard / Home)
-    local TabMain = Window:CreateTab("Main Hub", 6023426915)
+    local TabMain = Window:CreateTab("Hub", 6023426915)
     TabMain:CreateSection("Script & Game Status")
     TabMain:CreateParagraph({
         Title = "Voide Hub Status",
-        Content = "Status: Active & Working Perfectly!\nGame Detected: Killstreak Swords V4 (KSV4)\nOwner / User: " + LocalPlayer.Name
+        Content = "Status Working\nGame Detected: Killstreak Swords V4\nOwner / User: " .. LocalPlayer.Name
     })
     TabMain:CreateParagraph({
         Title = "Hub Features Overview",
-        Content = "• Halloween Tab: Candy collection & Bewitched Energy finder.\n• Leaderboard Tab: Auto Potion collection & use.\n• Player Tab: Desolation Orb auto-snipe & lag-free hitboxes."
+        Content = "This the first hub script in ks game story so use it with fun :)"
     })
 
     -- HALLOWEEN TAB (Icon: Pumpkin)
@@ -770,6 +773,7 @@ if Rayfield then
     local Tab3 = Window:CreateTab("Player", 6023426801)
     Tab3:CreateSection("Desolation & Combat")
     Tab3:CreateToggle({ Name = "Find Desolation Orb", CurrentValue = true, Callback = function(V) GlobalState.AutoDesoOrb = V end })
+    Tab3:CreateToggle({ Name = "Debug Interactions", CurrentValue = false, Callback = function(V) GlobalState.InstantPromptsEnabled = V end })
     Tab3:CreateToggle({
         Name = "Hitbox Expander",
         CurrentValue = false,
@@ -783,5 +787,5 @@ if Rayfield then
         end
     })
     Tab3:CreateToggle({ Name = "Hitbox Vision", CurrentValue = false, Callback = function(V) GlobalState.HitboxVisual = V end })
-    Tab3:CreateSlider({ Name = "Hitbox Size (Max 100 for Zero Lag)", Range = {2, 100}, Increment = 1, CurrentValue = 25, Callback = function(V) GlobalState.HitboxSize = V end })
+    Tab3:CreateSlider({ Name = "Hitbox Size", Range = {2, 100}, Increment = 1, CurrentValue = 25, Callback = function(V) GlobalState.HitboxSize = V end })
 end
