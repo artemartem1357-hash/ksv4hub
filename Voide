@@ -55,7 +55,7 @@ end
 local GlobalState = {
     HitboxEnabled = false,
     HitboxVisual = false,
-    HitboxSize = 25,
+    HitboxSize = 25, -- Safe default size
     AutoDesoOrb = true
 }
 
@@ -355,6 +355,8 @@ runFarmLoop(CandyState, function()
         end
     end)
 end, nil)
+
+
 -- ==================== LB POTIONS CONFIG ====================
 local PotionState = { Enabled = false, ESPEnabled = true, AutoUse = false, TPDelay = 0.08, Blacklist = {}, Attempts = {}, Queue = {} }
 
@@ -518,6 +520,8 @@ runFarmLoop(PotionState, function()
         end
     end)
 end, nil)
+
+
 -- ==================== BEWITCHED ENERGY CONFIG ====================
 local BewitchedState = { Enabled = false, ESPEnabled = true, TPDelay = 0.08, Blacklist = {}, Attempts = {}, Queue = {} }
 
@@ -598,9 +602,8 @@ setupESP(BewitchedState, Color3.fromRGB(138, 43, 226))
 runFarmLoop(BewitchedState, nil, 10)
 
 
--- ==================== SWORD HITBOX EXPANDER & REACH AURA (OPTIMIZED / LAG-FREE) ====================
+-- ==================== SWORD HITBOX EXPANDER & ULTRA-OPTIMIZED AURA ====================
 local OriginalToolProps = {}
-local lastHitboxUpdate = 0
 
 local function restoreToolHitbox(tool)
     if not tool then return end
@@ -637,7 +640,9 @@ local function applySwordHitbox(tool)
                     Massless = desc.Massless
                 }
             end
-            desc.Size = Vector3.new(GlobalState.HitboxSize, GlobalState.HitboxSize, GlobalState.HitboxSize)
+            -- Safety cap size at 100 max to eliminate extreme game lag
+            local safeSize = math.clamp(GlobalState.HitboxSize, 2, 100)
+            desc.Size = Vector3.new(safeSize, safeSize, safeSize)
             desc.CanCollide = false
             desc.Massless = true
             desc.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
@@ -653,48 +658,48 @@ local function applySwordHitbox(tool)
             if not OriginalToolProps[desc] then
                 OriginalToolProps[desc] = { Scale = desc.Scale }
             end
-            desc.Scale = Vector3.new(GlobalState.HitboxSize, GlobalState.HitboxSize, GlobalState.HitboxSize)
+            local safeSize = math.clamp(GlobalState.HitboxSize, 2, 100)
+            desc.Scale = Vector3.new(safeSize, safeSize, safeSize)
         end
     end
 end
 
-RunService.RenderStepped:Connect(function()
-    pcall(function()
-        local char = LocalPlayer.Character
-        if not char then return end
+-- Ultra-lightweight background loop running at 0.2s interval to ensure ZERO slashing lag
+task.spawn(function()
+    while true do
+        pcall(function()
+            local char = LocalPlayer.Character
+            if char then
+                local equippedTool = char:FindFirstChildWhichIsA("Tool")
+                if GlobalState.HitboxEnabled then
+                    if equippedTool then
+                        applySwordHitbox(equippedTool)
 
-        local equippedTool = char:FindFirstChildWhichIsA("Tool")
-        if GlobalState.HitboxEnabled then
-            if equippedTool then
-                applySwordHitbox(equippedTool)
-
-                -- Throttled touch interest aura for lag-free performance during slash
-                local now = tick()
-                if now - lastHitboxUpdate >= 0.05 then
-                    lastHitboxUpdate = now
-                    local handle = equippedTool:FindFirstChild("Handle") or equippedTool:FindFirstChildWhichIsA("BasePart")
-                    if handle and firetouchinterest then
-                        for _, player in ipairs(Players:GetPlayers()) do
-                            if player ~= LocalPlayer and player.Character then
-                                local enemyHum = player.Character:FindFirstChildOfClass("Humanoid")
-                                local enemyRoot = player.Character:FindFirstChild("HumanoidRootPart") or player.Character:FindFirstChild("Head")
-                                if enemyHum and enemyHum.Health > 0 and enemyRoot then
-                                    if (enemyRoot.Position - handle.Position).Magnitude <= (GlobalState.HitboxSize / 2) then
-                                        firetouchinterest(handle, enemyRoot, 0)
-                                        firetouchinterest(handle, enemyRoot, 1)
+                        local handle = equippedTool:FindFirstChild("Handle") or equippedTool:FindFirstChildWhichIsA("BasePart")
+                        if handle and firetouchinterest then
+                            for _, player in ipairs(Players:GetPlayers()) do
+                                if player ~= LocalPlayer and player.Character then
+                                    local enemyHum = player.Character:FindFirstChildOfClass("Humanoid")
+                                    local enemyRoot = player.Character:FindFirstChild("HumanoidRootPart") or player.Character:FindFirstChild("Head")
+                                    if enemyHum and enemyHum.Health > 0 and enemyRoot then
+                                        if (enemyRoot.Position - handle.Position).Magnitude <= (GlobalState.HitboxSize / 2) then
+                                            firetouchinterest(handle, enemyRoot, 0)
+                                            firetouchinterest(handle, enemyRoot, 1)
+                                        end
                                     end
                                 end
                             end
                         end
                     end
+                else
+                    if equippedTool then
+                        restoreToolHitbox(equippedTool)
+                    end
                 end
             end
-        else
-            if equippedTool then
-                restoreToolHitbox(equippedTool)
-            end
-        end
-    end)
+        end)
+        task.wait(0.2)
+    end
 end)
 
 
@@ -702,20 +707,20 @@ end)
 if Rayfield then
     local Window = Rayfield:CreateWindow({ Name = "Voide Hub", LoadingTitle = "Loading Voide Hub...", ConfigurationSaving = { Enabled = false }, KeySystem = false })
     
-    -- MAIN HUB TAB (Status, Game Info, Image Banner)
+    -- MAIN HUB TAB (Icon: Dashboard / Home)
     local TabMain = Window:CreateTab("Main Hub", 6023426915)
     TabMain:CreateSection("Script & Game Status")
     TabMain:CreateParagraph({
         Title = "Voide Hub Status",
-        Content = "Status: Active & Working Perfectly!\nGame Detected: Killstreak Swords V4 (KSV4)\nOwner / User: " .. LocalPlayer.Name
+        Content = "Status: Active & Working Perfectly!\nGame Detected: Killstreak Swords V4 (KSV4)\nOwner / User: " + LocalPlayer.Name
     })
     TabMain:CreateParagraph({
         Title = "Hub Features Overview",
-        Content = "• Halloween Tab: Candy collection & Bewitched Energy finder.\n• Leaderboard Tab: Auto Potion collection & use.\n• Player Tab: Desolation Orb auto-snipe & 9999 hitboxes."
+        Content = "• Halloween Tab: Candy collection & Bewitched Energy finder.\n• Leaderboard Tab: Auto Potion collection & use.\n• Player Tab: Desolation Orb auto-snipe & lag-free hitboxes."
     })
 
-    -- HALLOWEEN TAB
-    local Tab1 = Window:CreateTab("Halloween", 6023426915)
+    -- HALLOWEEN TAB (Icon: Pumpkin)
+    local Tab1 = Window:CreateTab("Halloween", 6023426941)
     Tab1:CreateSection("Candies Collection")
     Tab1:CreateToggle({
         Name = "Halloween Candies Farm",
@@ -730,9 +735,9 @@ if Rayfield then
         CurrentValue = false,
         Callback = function(V) CandyState.AutoEat = V end
     })
-    Tab1:CreateSlider({ Name = "Candy Teleport Delay", Range = {0.02, 0.3}, Increment = 0.01, CurrentValue = 0.08, Callback = function(V) CandyState.TPDelay = V end })
+    Tab1:CreateSlider({ Name = "Teleport Delay", Range = {0.02, 0.3}, Increment = 0.01, CurrentValue = 0.08, Callback = function(V) CandyState.TPDelay = V end })
 
-    Tab1:CreateSection("Bewitched Energy (Meteors)")
+    Tab1:CreateSection("Meteors")
     Tab1:CreateToggle({
         Name = "Bewitched Energy Find",
         CurrentValue = false,
@@ -741,10 +746,10 @@ if Rayfield then
             if V then rescanBewitchedFolder() end
         end
     })
-    Tab1:CreateSlider({ Name = "Bewitched Teleport Delay", Range = {0.02, 0.3}, Increment = 0.01, CurrentValue = 0.08, Callback = function(V) BewitchedState.TPDelay = V end })
+    Tab1:CreateSlider({ Name = "Teleport Delay", Range = {0.02, 0.3}, Increment = 0.01, CurrentValue = 0.08, Callback = function(V) BewitchedState.TPDelay = V end })
     
-    -- LEADERBOARD TAB
-    local Tab2 = Window:CreateTab("Leaderboard", 6023426915)
+    -- LEADERBOARD TAB (Icon: Trophy)
+    local Tab2 = Window:CreateTab("Leaderboard", 6034818372)
     Tab2:CreateSection("Potions & Bottle Farm")
     Tab2:CreateToggle({
         Name = "Leaderboard Potions Farm",
@@ -759,10 +764,10 @@ if Rayfield then
         CurrentValue = false,
         Callback = function(V) PotionState.AutoUse = V end
     })
-    Tab2:CreateSlider({ Name = "Potion Teleport Delay", Range = {0.02, 0.3}, Increment = 0.01, CurrentValue = 0.08, Callback = function(V) PotionState.TPDelay = V end })
+    Tab2:CreateSlider({ Name = "Teleport Delay", Range = {0.02, 0.3}, Increment = 0.01, CurrentValue = 0.08, Callback = function(V) PotionState.TPDelay = V end })
 
-    -- PLAYER / COMBAT TAB
-    local Tab3 = Window:CreateTab("Player", 6023426915)
+    -- PLAYER / COMBAT TAB (Icon: User Shield)
+    local Tab3 = Window:CreateTab("Player", 6023426801)
     Tab3:CreateSection("Desolation & Combat")
     Tab3:CreateToggle({ Name = "Find Desolation Orb", CurrentValue = true, Callback = function(V) GlobalState.AutoDesoOrb = V end })
     Tab3:CreateToggle({
@@ -778,5 +783,5 @@ if Rayfield then
         end
     })
     Tab3:CreateToggle({ Name = "Hitbox Vision", CurrentValue = false, Callback = function(V) GlobalState.HitboxVisual = V end })
-    Tab3:CreateSlider({ Name = "Hitbox Size (Up to 9999)", Range = {2, 9999}, Increment = 1, CurrentValue = 25, Callback = function(V) GlobalState.HitboxSize = V end })
+    Tab3:CreateSlider({ Name = "Hitbox Size (Max 100 for Zero Lag)", Range = {2, 100}, Increment = 1, CurrentValue = 25, Callback = function(V) GlobalState.HitboxSize = V end })
 end
