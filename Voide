@@ -1,0 +1,764 @@
+-- Safe Cross-Platform Rayfield Loader
+local Success, Rayfield = pcall(function()
+    return loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+end)
+
+if not Success or not Rayfield then
+    pcall(function()
+        Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/shlexware/Rayfield/main/source'))()
+    end)
+end
+
+-- Services
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Lighting = game:GetService("Lighting")
+local LocalPlayer = Players.LocalPlayer
+
+-- Instant Proximity Prompt Hooker (Forces all prompts to have 0 hold duration)
+task.spawn(function()
+    while true do
+        pcall(function()
+            for _, descendant in ipairs(Workspace:GetDescendants()) do
+                if descendant:IsA("ProximityPrompt") then
+                    descendant.HoldDuration = 0
+                    descendant.MaxActivationDistance = 999999
+                    descendant.RequiresLineOfSight = false
+                end
+            end
+        end)
+        task.wait(1)
+    end
+end)
+
+-- Executor Function Polyfills for PC & Mobile
+local safeFireProximityPrompt = fireproximityprompt or function(Prompt)
+    if Prompt and Prompt:IsA("ProximityPrompt") then
+        Prompt.HoldDuration = 0
+        Prompt:InputHoldBegin()
+        task.wait(0.01)
+        Prompt:InputHoldEnd()
+    end
+end
+
+local safeFireTouchInterest = firetouchinterest or function(PartToTouch, TouchWith, Toggle)
+    if PartToTouch and TouchWith and TouchWith:IsA("BasePart") then
+        if Toggle == 0 then
+            TouchWith.CFrame = PartToTouch.CFrame
+        end
+    end
+end
+
+-- ==================== GLOBAL STATE & DESOLATION ORB AUTO-SNIPE ====================
+local GlobalState = {
+    HitboxEnabled = false,
+    HitboxVisual = false,
+    HitboxSize = 25,
+    AutoDesoOrb = true
+}
+
+local function snipeDesolationOrb(orbObj)
+    if not GlobalState.AutoDesoOrb then return end
+    task.spawn(function()
+        pcall(function()
+            local char = LocalPlayer.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if not root then return end
+
+            local targetPart = orbObj:IsA("BasePart") and orbObj or orbObj:FindFirstChildWhichIsA("BasePart", true)
+            local prompt = orbObj:FindFirstChildWhichIsA("ProximityPrompt", true)
+
+            if targetPart then
+                root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                root.CFrame = targetPart.CFrame + Vector3.new(0, 1, 0)
+            end
+
+            for _ = 1, 15 do
+                if not orbObj or not orbObj.Parent then break end
+                prompt = prompt or orbObj:FindFirstChildWhichIsA("ProximityPrompt", true)
+                if prompt and prompt.Enabled then
+                    prompt.HoldDuration = 0
+                    prompt.MaxActivationDistance = 999999
+                    prompt.RequiresLineOfSight = false
+                    safeFireProximityPrompt(prompt)
+                end
+                if targetPart and root then
+                    root.CFrame = targetPart.CFrame + Vector3.new(0, 1, 0)
+                end
+                RunService.Heartbeat:Wait()
+            end
+        end)
+    end)
+end
+
+Workspace.DescendantAdded:Connect(function(descendant)
+    if descendant:IsA("ProximityPrompt") then
+        pcall(function()
+            descendant.HoldDuration = 0
+            descendant.MaxActivationDistance = 999999
+            descendant.RequiresLineOfSight = false
+        end)
+        if descendant.Parent and descendant.Parent.Name:lower():find("desolationorb") then
+            snipeDesolationOrb(descendant.Parent)
+        end
+    elseif descendant.Name:lower():find("desolationorb") then
+        snipeDesolationOrb(descendant)
+    end
+end)
+
+-- Shared Utility Function: Teleport & Collection Loop with Min Distance Check
+local function runFarmLoop(stateTable, useItemFunc, minDistToSkip)
+    task.spawn(function()
+        while true do
+            if stateTable.Enabled then
+                pcall(function()
+                    local char = LocalPlayer.Character
+                    local root = char and char:FindFirstChild("HumanoidRootPart")
+
+                    if root and #stateTable.Queue > 0 then
+                        local i = 1
+                        while i <= #stateTable.Queue do
+                            if not stateTable.Enabled then break end
+
+                            local data = stateTable.Queue[i]
+                            local targetPart = data and data.Part
+                            local prompt = data and data.Prompt
+
+                            if targetPart and targetPart.Parent and targetPart:IsDescendantOf(Workspace) and not stateTable.Blacklist[targetPart] then
+                                if minDistToSkip then
+                                    local dist = (root.Position - targetPart.Position).Magnitude
+                                    if dist <= minDistToSkip then
+                                        if prompt and prompt.Parent and prompt.Enabled then
+                                            pcall(function()
+                                                prompt.HoldDuration = 0
+                                                prompt.MaxActivationDistance = 999999
+                                                prompt.RequiresLineOfSight = false
+                                                safeFireProximityPrompt(prompt)
+                                            end)
+                                        end
+                                        pcall(function()
+                                            safeFireTouchInterest(targetPart, root, 0)
+                                            safeFireTouchInterest(targetPart, root, 1)
+                                        end)
+                                        if useItemFunc then useItemFunc() end
+                                        table.remove(stateTable.Queue, i)
+                                        task.wait(0.1)
+                                        continue
+                                    end
+                                end
+
+                                if not stateTable.Attempts[targetPart] then
+                                    stateTable.Attempts[targetPart] = 0
+                                end
+
+                                if stateTable.Attempts[targetPart] >= 4 then
+                                    stateTable.Attempts[targetPart] = 0
+                                    local stuckItem = table.remove(stateTable.Queue, i)
+                                    if stuckItem then
+                                        table.insert(stateTable.Queue, stuckItem)
+                                    end
+                                    continue
+                                end
+
+                                root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                                root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                                root.CFrame = targetPart.CFrame + Vector3.new(0, 0.5, 0)
+
+                                RunService.Heartbeat:Wait()
+
+                                for step = 1, 6 do
+                                    if not targetPart or not targetPart.Parent or not targetPart:IsDescendantOf(Workspace) then
+                                        break
+                                    end
+
+                                    if prompt and prompt.Parent and prompt.Enabled then
+                                        pcall(function()
+                                            prompt.HoldDuration = 0
+                                            prompt.MaxActivationDistance = 999999
+                                            prompt.RequiresLineOfSight = false
+                                            safeFireProximityPrompt(prompt)
+                                        end)
+                                    end
+
+                                    pcall(function()
+                                        safeFireTouchInterest(targetPart, root, 0)
+                                        safeFireTouchInterest(targetPart, root, 1)
+                                    end)
+
+                                    task.wait(0.03)
+                                end
+
+                                if useItemFunc then
+                                    useItemFunc()
+                                end
+
+                                if not targetPart or not targetPart.Parent or not targetPart:IsDescendantOf(Workspace) then
+                                    stateTable.Attempts[targetPart] = nil
+                                    local hl = targetPart:FindFirstChild("FarmHighlight")
+                                    if hl then hl:Destroy() end
+                                    table.remove(stateTable.Queue, i)
+                                else
+                                    stateTable.Attempts[targetPart] = stateTable.Attempts[targetPart] + 1
+                                    i = i + 1
+                                end
+
+                                task.wait(stateTable.TPDelay)
+                            else
+                                table.remove(stateTable.Queue, i)
+                            end
+                        end
+                    end
+                end)
+            end
+            task.wait(0.1)
+        end
+    end)
+end
+
+-- ESP Handler
+local function setupESP(stateTable, fillColor)
+    task.spawn(function()
+        while true do
+            if stateTable.ESPEnabled and stateTable.Enabled then
+                pcall(function()
+                    for _, data in ipairs(stateTable.Queue) do
+                        local part = data.Part
+                        if part and part.Parent and not part:FindFirstChild("FarmHighlight") and not stateTable.Blacklist[part] then
+                            local highlight = Instance.new("Highlight")
+                            highlight.Name = "FarmHighlight"
+                            highlight.Adornee = part
+                            highlight.FillColor = fillColor
+                            highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                            highlight.FillTransparency = 0.3
+                            highlight.OutlineTransparency = 0
+                            highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                            highlight.Parent = part
+                        end
+                    end
+                end)
+            else
+                pcall(function()
+                    for _, obj in ipairs(Workspace:GetDescendants()) do
+                        if obj.Name == "FarmHighlight" then obj:Destroy() end
+                    end
+                end)
+            end
+            task.wait(1.5)
+        end
+    end)
+end
+
+-- ==================== CANDY CONFIG ====================
+local CandyState = { Enabled = false, ESPEnabled = true, AutoEat = false, TPDelay = 0.08, Blacklist = {}, Attempts = {}, Queue = {} }
+
+local function extractCandyData(container, state)
+    if not container or not container.Parent or state.Blacklist[container] then return nil end
+    if container:IsA("Model") and (container:FindFirstChildOfClass("Humanoid") or Players:GetPlayerFromCharacter(container)) then return nil end
+
+    local prompt = container:FindFirstChildWhichIsA("ProximityPrompt", true)
+    local touch = container:FindFirstChildWhichIsA("TouchTransmitter", true)
+    local targetPart = nil
+
+    if prompt and prompt.Parent and prompt.Parent:IsA("BasePart") then
+        targetPart = prompt.Parent
+    elseif touch and touch.Parent and touch.Parent:IsA("BasePart") then
+        targetPart = touch.Parent
+    elseif container:IsA("Model") then
+        targetPart = container.PrimaryPart or container:FindFirstChildWhichIsA("BasePart", true)
+    elseif container:IsA("BasePart") then
+        targetPart = container
+    end
+
+    if targetPart and targetPart:IsA("BasePart") and not state.Blacklist[targetPart] then
+        if not prompt then
+            prompt = targetPart:FindFirstChildOfClass("ProximityPrompt") or (targetPart.Parent and targetPart.Parent:FindFirstChildOfClass("ProximityPrompt"))
+        end
+        return { Part = targetPart, Prompt = prompt, Source = container }
+    end
+    return nil
+end
+
+local function rescanCandyFolders()
+    pcall(function()
+        local activeParts = {}
+        local function addUnique(data)
+            if data and data.Part then
+                activeParts[data.Part] = true
+                for _, existing in ipairs(CandyState.Queue) do
+                    if existing.Part == data.Part then return end
+                end
+                table.insert(CandyState.Queue, data)
+            end
+        end
+
+        local candySearch = Workspace:FindFirstChild("OthersSpecialEvents") and Workspace.OthersSpecialEvents:FindFirstChild("CandySearch")
+        if candySearch then
+            for _, spawnSlot in ipairs(candySearch:GetChildren()) do
+                for _, child in ipairs(spawnSlot:GetChildren()) do
+                    if child.Name ~= "Spawn" and not child:IsA("Attachment") then
+                        local data = extractCandyData(child, CandyState)
+                        if data then addUnique(data) end
+                    end
+                end
+            end
+        end
+
+        local spawnedCandies = Workspace:FindFirstChild("SpawnedCandies")
+        if spawnedCandies then
+            for _, candyObj in ipairs(spawnedCandies:GetChildren()) do
+                local data = extractCandyData(candyObj, CandyState)
+                if data then addUnique(data) end
+            end
+        end
+
+        for i = #CandyState.Queue, 1, -1 do
+            local item = CandyState.Queue[i]
+            if not item or not item.Part or not activeParts[item.Part] then
+                table.remove(CandyState.Queue, i)
+            end
+        end
+    end)
+end
+
+task.spawn(function()
+    while true do
+        if CandyState.Enabled then rescanCandyFolders() end
+        task.wait(0.8)
+    end
+end)
+
+setupESP(CandyState, Color3.fromRGB(255, 120, 0))
+runFarmLoop(CandyState, function()
+    if not CandyState.AutoEat then return end
+    pcall(function()
+        local char = LocalPlayer.Character
+        local backpack = LocalPlayer:FindFirstChild("Backpack")
+        if not char then return end
+
+        for _, item in ipairs(char:GetChildren()) do
+            if item:IsA("Tool") and (item.Name:lower():find("candy") or item.Name:lower():find("chocolate") or item.Name:lower():find("choco") or item.Name:lower():find("lolipop") or item.Name:lower():find("lollipop")) then
+                item:Activate()
+            end
+        end
+
+        if backpack then
+            for _, item in ipairs(backpack:GetChildren()) do
+                if item:IsA("Tool") and (item.Name:lower():find("candy") or item.Name:lower():find("chocolate") or item.Name:lower():find("choco") or item.Name:lower():find("lolipop") or item.Name:lower():find("lollipop")) then
+                    item.Parent = char
+                    task.wait(0.05)
+                    item:Activate()
+                    break
+                end
+            end
+        end
+    end)
+end, nil)
+
+
+-- ==================== LB POTIONS CONFIG ====================
+local PotionState = { Enabled = false, ESPEnabled = true, AutoUse = false, TPDelay = 0.08, Blacklist = {}, Attempts = {}, Queue = {} }
+
+local function extractPotionData(container, state)
+    if not container or not container.Parent or state.Blacklist[container] then return nil end
+    if container:IsA("Model") and (container:FindFirstChildOfClass("Humanoid") or Players:GetPlayerFromCharacter(container)) then return nil end
+    if container.Name == "Spawn" or container:IsA("Attachment") then return nil end
+
+    local name = container.Name:lower()
+    if name:find("lb") or name:find("potion") or name:find("bottle") or name:find("chest") then
+        local prompt = container:FindFirstChildWhichIsA("ProximityPrompt", true)
+        local touch = container:FindFirstChildWhichIsA("TouchTransmitter", true)
+
+        if name:find("chest") and prompt and not prompt.Enabled then
+            return nil
+        end
+
+        local targetPart = nil
+        if prompt and prompt.Parent and prompt.Parent:IsA("BasePart") then
+            targetPart = prompt.Parent
+        elseif touch and touch.Parent and touch.Parent:IsA("BasePart") then
+            targetPart = touch.Parent
+        elseif container:IsA("BasePart") then
+            targetPart = container
+        elseif container:IsA("Model") then
+            targetPart = container.PrimaryPart or container:FindFirstChildWhichIsA("BasePart", true)
+        end
+
+        if not targetPart then
+            targetPart = container:FindFirstChildWhichIsA("BasePart", true)
+        end
+
+        if not prompt and targetPart then
+            prompt = targetPart:FindFirstChildOfClass("ProximityPrompt") or (targetPart.Parent and targetPart.Parent:FindFirstChildOfClass("ProximityPrompt"))
+        end
+
+        if name:find("chest") and prompt and not prompt.Enabled then
+            return nil
+        end
+
+        if targetPart and targetPart:IsA("BasePart") and not state.Blacklist[targetPart] then
+            return { Part = targetPart, Prompt = prompt, Source = container }
+        end
+    end
+    return nil
+end
+
+local function rescanLBFolder()
+    pcall(function()
+        local activeParts = {}
+        local function addUnique(data)
+            if data and data.Part then
+                activeParts[data.Part] = true
+                for _, existing in ipairs(PotionState.Queue) do
+                    if existing.Part == data.Part then return end
+                end
+                if data.Source and not data.Source.Name:lower():find("chest") then
+                    table.insert(PotionState.Queue, 1, data)
+                else
+                    table.insert(PotionState.Queue, data)
+                end
+            end
+        end
+
+        local specialEvents = Workspace:FindFirstChild("OthersSpecialEvents")
+        local lbFolder = specialEvents and specialEvents:FindFirstChild("LBSearch")
+        if lbFolder then
+            for _, spawnPart in ipairs(lbFolder:GetChildren()) do
+                for _, desc in ipairs(spawnPart:GetDescendants()) do
+                    if desc.Name ~= "Spawn" and not desc:IsA("Attachment") then
+                        local data = extractPotionData(desc, PotionState)
+                        if data and data.Part ~= spawnPart then
+                            addUnique(data)
+                        end
+                    end
+                end
+            end
+        end
+
+        if specialEvents then
+            for _, obj in ipairs(specialEvents:GetChildren()) do
+                if obj ~= lbFolder and obj.Name ~= "CandySearch" then
+                    local data = extractPotionData(obj, PotionState)
+                    if data then addUnique(data) end
+                end
+            end
+        end
+
+        for _, obj in ipairs(Workspace:GetChildren()) do
+            if obj:IsA("BasePart") or obj:IsA("Model") or obj:IsA("Tool") then
+                local n = obj.Name:lower()
+                if n:find("lbbottle") or n:find("lbpotion") or n:find("xllb") or (n:find("lb") and (n:find("bottle") or n:find("potion"))) then
+                    local data = extractPotionData(obj, PotionState)
+                    if data then addUnique(data) end
+                end
+            end
+        end
+
+        for i = #PotionState.Queue, 1, -1 do
+            local item = PotionState.Queue[i]
+            if not item or not item.Part or not activeParts[item.Part] then
+                table.remove(PotionState.Queue, i)
+            end
+        end
+    end)
+end
+
+task.spawn(function()
+    while true do
+        if PotionState.Enabled then rescanLBFolder() end
+        task.wait(0.5)
+    end
+end)
+
+local lbSearchFolder = Workspace:FindFirstChild("OthersSpecialEvents") and Workspace.OthersSpecialEvents:FindFirstChild("LBSearch")
+if lbSearchFolder then
+    lbSearchFolder.DescendantAdded:Connect(function(desc)
+        if not PotionState.Enabled then return end
+        if desc.Parent == lbSearchFolder or desc:IsA("Attachment") then return end
+        task.spawn(function()
+            RunService.Heartbeat:Wait()
+            rescanLBFolder()
+        end)
+    end)
+end
+
+Workspace.ChildAdded:Connect(function(child)
+    if not PotionState.Enabled then return end
+    local n = child.Name:lower()
+    if n:find("lb") or n:find("potion") or n:find("bottle") then
+        task.spawn(function()
+            RunService.Heartbeat:Wait()
+            rescanLBFolder()
+        end)
+    end
+end)
+
+setupESP(PotionState, Color3.fromRGB(0, 180, 255))
+runFarmLoop(PotionState, function()
+    if not PotionState.AutoUse then return end
+    pcall(function()
+        local char = LocalPlayer.Character
+        local backpack = LocalPlayer:FindFirstChild("Backpack")
+        if not char then return end
+
+        for _, item in ipairs(char:GetChildren()) do
+            if item:IsA("Tool") and (item.Name:lower():find("lb") or item.Name:lower():find("potion") or item.Name:lower():find("bottle")) then
+                item:Activate()
+            end
+        end
+
+        if backpack then
+            for _, item in ipairs(backpack:GetChildren()) do
+                if item:IsA("Tool") and (item.Name:lower():find("lb") or item.Name:lower():find("potion") or item.Name:lower():find("bottle")) then
+                    item.Parent = char
+                    task.wait(0.05)
+                    item:Activate()
+                    break
+                end
+            end
+        end
+    end)
+end, nil)
+
+
+-- ==================== BEWITCHED ENERGY CONFIG ====================
+local BewitchedState = { Enabled = false, ESPEnabled = true, TPDelay = 0.08, Blacklist = {}, Attempts = {}, Queue = {} }
+
+local function getBewitchedData(inst, state)
+    if not inst or not inst.Parent or state.Blacklist[inst] then return nil end
+    if inst:IsA("Model") and (inst:FindFirstChildOfClass("Humanoid") or Players:GetPlayerFromCharacter(inst)) then return nil end
+
+    local name = inst.Name:lower()
+    if name:find("bewitchede") or name:find("bewitchedenergy") then
+        local targetPart = nil
+        local prompt = inst:FindFirstChildWhichIsA("ProximityPrompt", true)
+
+        if inst:IsA("BasePart") then
+            targetPart = inst
+        elseif inst:IsA("Model") or inst:IsA("Folder") then
+            targetPart = inst.PrimaryPart or inst:FindFirstChildWhichIsA("BasePart", true)
+        end
+
+        if not prompt and targetPart then
+            prompt = targetPart:FindFirstChildOfClass("ProximityPrompt") or (targetPart.Parent and targetPart.Parent:FindFirstChildOfClass("ProximityPrompt"))
+        end
+
+        if targetPart and targetPart:IsA("BasePart") and not state.Blacklist[targetPart] then
+            return { Part = targetPart, Prompt = prompt, Source = inst }
+        end
+    end
+    return nil
+end
+
+local function rescanBewitchedFolder()
+    pcall(function()
+        local activeParts = {}
+        local function addUnique(data)
+            if data and data.Part then
+                activeParts[data.Part] = true
+                for _, existing in ipairs(BewitchedState.Queue) do
+                    if existing.Part == data.Part then return end
+                end
+                table.insert(BewitchedState.Queue, data)
+            end
+        end
+
+        for _, desc in ipairs(Workspace:GetDescendants()) do
+            local data = getBewitchedData(desc, BewitchedState)
+            if data and data.Part then
+                addUnique(data)
+            end
+        end
+
+        for i = #BewitchedState.Queue, 1, -1 do
+            local item = BewitchedState.Queue[i]
+            if not item or not item.Part or not activeParts[item.Part] then
+                table.remove(BewitchedState.Queue, i)
+            end
+        end
+    end)
+end
+
+task.spawn(function()
+    while true do
+        if BewitchedState.Enabled then rescanBewitchedFolder() end
+        task.wait(1)
+    end
+end)
+
+Workspace.DescendantAdded:Connect(function(desc)
+    if not BewitchedState.Enabled then return end
+    local n = desc.Name:lower()
+    if n:find("bewitchede") or n:find("bewitchedenergy") then
+        task.spawn(function()
+            RunService.Heartbeat:Wait()
+            rescanBewitchedFolder()
+        end)
+    end
+end)
+
+setupESP(BewitchedState, Color3.fromRGB(138, 43, 226))
+runFarmLoop(BewitchedState, nil, 10)
+
+
+-- ==================== SWORD HITBOX EXPANDER & REACH AURA ====================
+local OriginalToolProps = {}
+
+local function restoreToolHitbox(tool)
+    if not tool then return end
+    for _, desc in ipairs(tool:GetDescendants()) do
+        if OriginalToolProps[desc] then
+            pcall(function()
+                if desc:IsA("BasePart") then
+                    desc.Size = OriginalToolProps[desc].Size
+                    desc.Transparency = OriginalToolProps[desc].Transparency
+                    desc.Color = OriginalToolProps[desc].Color
+                    desc.Material = OriginalToolProps[desc].Material
+                    desc.CanCollide = OriginalToolProps[desc].CanCollide
+                    desc.Massless = OriginalToolProps[desc].Massless
+                elseif desc:IsA("SpecialMesh") then
+                    desc.Scale = OriginalToolProps[desc].Scale
+                end
+            end)
+            OriginalToolProps[desc] = nil
+        end
+    end
+end
+
+local function applySwordHitbox(tool)
+    if not tool then return end
+    for _, desc in ipairs(tool:GetDescendants()) do
+        if desc:IsA("BasePart") then
+            if not OriginalToolProps[desc] then
+                OriginalToolProps[desc] = {
+                    Size = desc.Size,
+                    Transparency = desc.Transparency,
+                    Color = desc.Color,
+                    Material = desc.Material,
+                    CanCollide = desc.CanCollide,
+                    Massless = desc.Massless
+                }
+            end
+            desc.Size = Vector3.new(GlobalState.HitboxSize, GlobalState.HitboxSize, GlobalState.HitboxSize)
+            desc.CanCollide = false
+            desc.Massless = true
+            desc.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+
+            if GlobalState.HitboxVisual then
+                desc.Transparency = 0.65
+                desc.Color = Color3.fromRGB(200, 0, 255)
+                desc.Material = Enum.Material.Neon
+            else
+                desc.Transparency = 1
+            end
+        elseif desc:IsA("SpecialMesh") then
+            if not OriginalToolProps[desc] then
+                OriginalToolProps[desc] = { Scale = desc.Scale }
+            end
+            desc.Scale = Vector3.new(GlobalState.HitboxSize, GlobalState.HitboxSize, GlobalState.HitboxSize)
+        end
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    pcall(function()
+        local char = LocalPlayer.Character
+        if not char then return end
+
+        local equippedTool = char:FindFirstChildWhichIsA("Tool")
+        if GlobalState.HitboxEnabled then
+            if equippedTool then
+                applySwordHitbox(equippedTool)
+
+                -- Touch Interest Aura for reliable hit registration
+                local handle = equippedTool:FindFirstChild("Handle") or equippedTool:FindFirstChildWhichIsA("BasePart")
+                if handle and firetouchinterest then
+                    for _, player in ipairs(Players:GetPlayers()) do
+                        if player ~= LocalPlayer and player.Character then
+                            local enemyHum = player.Character:FindFirstChildOfClass("Humanoid")
+                            local enemyRoot = player.Character:FindFirstChild("HumanoidRootPart") or player.Character:FindFirstChild("Head")
+                            if enemyHum and enemyHum.Health > 0 and enemyRoot then
+                                if (enemyRoot.Position - handle.Position).Magnitude <= (GlobalState.HitboxSize / 2) then
+                                    firetouchinterest(handle, enemyRoot, 0)
+                                    firetouchinterest(handle, enemyRoot, 1)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        else
+            if equippedTool then
+                restoreToolHitbox(equippedTool)
+            end
+        end
+    end)
+end)
+
+
+-- ==================== RAYFIELD UI ====================
+if Rayfield then
+    local Window = Rayfield:CreateWindow({ Name = "Voide Hub", LoadingTitle = "Finding Files Of Game...", ConfigurationSaving = { Enabled = false }, KeySystem = false })
+    
+    local Tab1 = Window:CreateTab("Hallowen", 4483362458)
+    Tab1:CreateSection("Candies")
+    Tab1:CreateToggle({
+        Name = "Hallowen Candies Farm",
+        CurrentValue = false,
+        Callback = function(V)
+            CandyState.Enabled = V
+            if V then rescanCandyFolders() end
+        end
+    })
+    Tab1:CreateToggle({
+        Name = "Auto Eat Candies",
+        CurrentValue = false,
+        Callback = function(V) CandyState.AutoEat = V end
+    })
+    Tab1:CreateSlider({ Name = "Teleport Delay", Range = {0.02, 0.3}, Increment = 0.01, CurrentValue = 0.08, Callback = function(V) CandyState.TPDelay = V end })
+
+    Tab1:CreateSection("Meteors")
+    Tab1:CreateToggle({
+        Name = "Bewitched Energy Find",
+        CurrentValue = false,
+        Callback = function(V)
+            BewitchedState.Enabled = V
+            if V then rescanBewitchedFolder() end
+        end
+    })
+    Tab1:CreateSlider({ Name = "Teleport Delay", Range = {0.02, 0.3}, Increment = 0.01, CurrentValue = 0.08, Callback = function(V) BewitchedState.TPDelay = V end })
+    
+    local Tab2 = Window:CreateTab("Leaderboard", 4483362458)
+    Tab2:CreateToggle({
+        Name = "Leaderboard Potions Farm",
+        CurrentValue = false,
+        Callback = function(V)
+            PotionState.Enabled = V
+            if V then rescanLBFolder() end
+        end
+    })
+    Tab2:CreateToggle({
+        Name = "Auto Drink Potions",
+        CurrentValue = false,
+        Callback = function(V) PotionState.AutoUse = V end
+    })
+    Tab2:CreateSlider({ Name = "Teleport Delay", Range = {0.02, 0.3}, Increment = 0.01, CurrentValue = 0.08, Callback = function(V) PotionState.TPDelay = V end })
+
+    local Tab3 = Window:CreateTab("Player", 4483362458)
+    Tab3:CreateToggle({ Name = "Find Desolation Orb", CurrentValue = true, Callback = function(V) GlobalState.AutoDesoOrb = V end })
+    Tab3:CreateToggle({
+        Name = "Hitbox Expander",
+        CurrentValue = false,
+        Callback = function(V)
+            GlobalState.HitboxEnabled = V
+            if not V then
+                local char = LocalPlayer.Character
+                local tool = char and char:FindFirstChildWhichIsA("Tool")
+                if tool then restoreToolHitbox(tool) end
+            end
+        end
+    })
+    Tab3:CreateToggle({ Name = "Hitbox Vision", CurrentValue = false, Callback = function(V) GlobalState.HitboxVisual = V end })
+    Tab3:CreateSlider({ Name = "Hitbox Size", Range = {2, 150}, Increment = 1, CurrentValue = 25, Callback = function(V) GlobalState.HitboxSize = V end })
+end 
