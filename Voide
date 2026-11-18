@@ -715,7 +715,7 @@ if Rayfield then
     TabMain:CreateSection("Script & Game Status")
     TabMain:CreateParagraph({
         Title = "Voide Hub Status",
-        Content = "Status Working\nGame Detected: Killstreak Swords V4\nOwner / User: " .. LocalPlayer.Name
+        Content = "Status Bugging\nGame Detected: Killstreak Swords V4\nOwner / User: " .. LocalPlayer.Name
     })
     TabMain:CreateParagraph({
         Title = "Hub Features Overview",
