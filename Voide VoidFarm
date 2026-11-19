@@ -1,0 +1,1997 @@
+local CoreGui = game:GetService("CoreGui")
+
+local Players = game:GetService("Players")
+
+local RunService = game:GetService("RunService")
+
+local VirtualUser = game:GetService("VirtualUser")
+
+local LocalPlayer = Players.LocalPlayer
+
+
+
+-- =================================================================
+
+-- CONFIGURATION
+
+-- =================================================================
+
+local SACRIFICE_SWORD = "Apotheosis" -- Target weapon name
+
+local MAP_HITBOX_SIZE = 1500 -- Default Hitbox size
+
+
+
+-- EXACT HARDCODED POSITIONS
+
+local ARENA_POSITION = Vector3.new(249.2436981201172, 1101.5126953125, 132.23776245117188)
+
+local EXISTENTIAL_POSITION = Vector3.new(17.87982177734375, 51888.99609375, 247.1317901611328)
+
+local SACRIFICE_POSITION = Vector3.new(3908.892822265625, 1093.681640625, 9.674517631530762)
+
+
+
+local ARENA_PORTAL_NAME = "Portal" -- Portal fallback name
+
+local SHOW_HITBOX_VISUAL = false -- Starts OFF
+
+local autoSwingEnabled = true -- STARTS ON BY DEFAULT
+
+-- =================================================================
+
+
+
+-- Control and State Tracking (Starts Paused)
+
+local running = false
+
+local activeConnections = {}
+
+local existentialTriggered = false
+
+local sacrificeTriggered = false
+
+local arenaEntered = false
+
+local loopThread = nil
+
+
+
+-- =================================================================
+
+-- UI CREATION (Control Panel)
+
+-- =================================================================
+
+local ScreenGui = Instance.new("ScreenGui")
+
+ScreenGui.Name = "AutofarmControllerGUI"
+
+ScreenGui.ResetOnSpawn = false
+
+
+
+if protectgui then
+
+protectgui(ScreenGui)
+
+ScreenGui.Parent = CoreGui
+
+else
+
+local success, err = pcall(function()
+
+ScreenGui.Parent = CoreGui
+
+end)
+
+if not success then
+
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+end
+
+end
+
+
+
+local Frame = Instance.new("Frame", ScreenGui)
+
+Frame.Size = UDim2.new(0, 180, 0, 275)
+
+Frame.Position = UDim2.new(0.05, 0, 0.2, 0)
+
+Frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+
+Frame.BorderSizePixel = 0
+
+Frame.Active = true
+
+Frame.Draggable = true
+
+
+
+local UICorner = Instance.new("UICorner", Frame)
+
+UICorner.CornerRadius = UDim.new(0, 6)
+
+
+
+-- 1. Toggle Button (Starts OFF -> Green START button)
+
+local ToggleButton = Instance.new("TextButton", Frame)
+
+ToggleButton.Size = UDim2.new(0.9, 0, 0, 30)
+
+ToggleButton.Position = UDim2.new(0.05, 0, 0.04, 0)
+
+ToggleButton.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
+
+ToggleButton.Text = "START"
+
+ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+ToggleButton.Font = Enum.Font.SourceSansBold
+
+ToggleButton.TextSize = 14
+
+
+
+local ToggleCorner = Instance.new("UICorner", ToggleButton)
+
+ToggleCorner.CornerRadius = UDim.new(0, 4)
+
+
+
+-- 2. Visual Toggle Button (Starts OFF)
+
+local VisualButton = Instance.new("TextButton", Frame)
+
+VisualButton.Size = UDim2.new(0.9, 0, 0, 30)
+
+VisualButton.Position = UDim2.new(0.05, 0, 0.19, 0)
+
+VisualButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+
+VisualButton.Text = "VISUAL: OFF"
+
+VisualButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+VisualButton.Font = Enum.Font.SourceSansBold
+
+VisualButton.TextSize = 14
+
+
+
+local VisualCorner = Instance.new("UICorner", VisualButton)
+
+VisualCorner.CornerRadius = UDim.new(0, 4)
+
+
+
+-- 3. Auto Swing Toggle Button (Starts ON)
+
+local SwingButton = Instance.new("TextButton", Frame)
+
+SwingButton.Size = UDim2.new(0.9, 0, 0, 30)
+
+SwingButton.Position = UDim2.new(0.05, 0, 0.35, 0)
+
+SwingButton.BackgroundColor3 = Color3.fromRGB(40, 120, 200)
+
+SwingButton.Text = "SWING: ON"
+
+SwingButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+SwingButton.Font = Enum.Font.SourceSansBold
+
+SwingButton.TextSize = 14
+
+
+
+local SwingCorner = Instance.new("UICorner", SwingButton)
+
+SwingCorner.CornerRadius = UDim.new(0, 4)
+
+
+
+-- 4. Hitbox Size Input Box
+
+local SizeBox = Instance.new("TextBox", Frame)
+
+SizeBox.Size = UDim2.new(0.9, 0, 0, 30)
+
+SizeBox.Position = UDim2.new(0.05, 0, 0.51, 0)
+
+SizeBox.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+
+SizeBox.Text = tostring(MAP_HITBOX_SIZE)
+
+SizeBox.PlaceholderText = "Hitbox Size"
+
+SizeBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+SizeBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+
+SizeBox.Font = Enum.Font.SourceSansBold
+
+SizeBox.TextSize = 14
+
+SizeBox.ClearTextOnFocus = false
+
+
+
+local SizeCorner = Instance.new("UICorner", SizeBox)
+
+SizeCorner.CornerRadius = UDim.new(0, 4)
+
+
+
+-- 5. Equip Apotheosis Button
+
+local EquipButton = Instance.new("TextButton", Frame)
+
+EquipButton.Size = UDim2.new(0.9, 0, 0, 30)
+
+EquipButton.Position = UDim2.new(0.05, 0, 0.67, 0)
+
+EquipButton.BackgroundColor3 = Color3.fromRGB(180, 120, 20)
+
+EquipButton.Text = "EQUIP APOTHEOSIS"
+
+EquipButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+EquipButton.Font = Enum.Font.SourceSansBold
+
+EquipButton.TextSize = 12
+
+
+
+local EquipCorner = Instance.new("UICorner", EquipButton)
+
+EquipCorner.CornerRadius = UDim.new(0, 4)
+
+
+
+-- 6. Delete Button
+
+local DeleteButton = Instance.new("TextButton", Frame)
+
+DeleteButton.Size = UDim2.new(0.9, 0, 0, 30)
+
+DeleteButton.Position = UDim2.new(0.05, 0, 0.83, 0)
+
+DeleteButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+
+DeleteButton.Text = "DELETE"
+
+DeleteButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+DeleteButton.Font = Enum.Font.SourceSansBold
+
+DeleteButton.TextSize = 14
+
+
+
+local DeleteCorner = Instance.new("UICorner", DeleteButton)
+
+DeleteCorner.CornerRadius = UDim.new(0, 4)
+
+
+
+local startMainLoop
+
+local safeTeleport
+
+
+
+safeTeleport = function(targetPosition)
+
+local char = LocalPlayer.Character
+
+if not char then return end
+
+local root = char:FindFirstChild("HumanoidRootPart")
+
+if not root then return end
+
+
+
+root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+
+root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+
+
+
+root.CFrame = CFrame.new(targetPosition)
+
+char:PivotTo(CFrame.new(targetPosition))
+
+
+local camera = workspace.CurrentCamera
+
+camera.CameraType = Enum.CameraType.Custom
+
+if char:FindFirstChildOfClass("Humanoid") then
+
+camera.CameraSubject = char:FindFirstChildOfClass("Humanoid")
+
+end
+
+end
+
+
+
+ToggleButton.MouseButton1Click:Connect(function()
+
+running = not running
+
+if running then
+
+ToggleButton.Text = "STOP"
+
+ToggleButton.BackgroundColor3 = Color3.fromRGB(200, 40, 40)
+
+print("[AUTOFARM] Resumed.")
+
+startMainLoop()
+
+else
+
+ToggleButton.Text = "START"
+
+ToggleButton.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
+
+print("[AUTOFARM] Paused.")
+
+end
+
+end)
+
+
+
+VisualButton.MouseButton1Click:Connect(function()
+
+SHOW_HITBOX_VISUAL = not SHOW_HITBOX_VISUAL
+
+if SHOW_HITBOX_VISUAL then
+
+VisualButton.Text = "VISUAL: ON"
+
+VisualButton.BackgroundColor3 = Color3.fromRGB(150, 40, 200)
+
+else
+
+VisualButton.Text = "VISUAL: OFF"
+
+VisualButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+
+end
+
+print("[AUTOFARM] Hitbox Visual set to: " .. tostring(SHOW_HITBOX_VISUAL))
+
+end)
+
+
+
+SwingButton.MouseButton1Click:Connect(function()
+
+autoSwingEnabled = not autoSwingEnabled
+
+if autoSwingEnabled then
+
+SwingButton.Text = "SWING: ON"
+
+SwingButton.BackgroundColor3 = Color3.fromRGB(40, 120, 200)
+
+else
+
+SwingButton.Text = "SWING: OFF"
+
+SwingButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+
+end
+
+print("[AUTOFARM] Auto Swing set to: " .. tostring(autoSwingEnabled))
+
+end)
+
+
+
+SizeBox.FocusLost:Connect(function(enterPressed)
+
+local newSize = tonumber(SizeBox.Text)
+
+if newSize and newSize > 0 then
+
+MAP_HITBOX_SIZE = newSize
+
+print("[AUTOFARM] Hitbox Size updated to: " .. tostring(MAP_HITBOX_SIZE))
+
+else
+
+SizeBox.Text = tostring(MAP_HITBOX_SIZE)
+
+end
+
+end)
+
+
+
+-- DIRECT ON-SWORD TELEPORT HANDLER
+
+EquipButton.MouseButton1Click:Connect(function()
+
+local char = LocalPlayer.Character
+
+if not char then return end
+
+local root = char:FindFirstChild("HumanoidRootPart")
+
+local hum = char:FindFirstChildOfClass("Humanoid")
+
+if not root or not hum then return end
+
+
+
+-- 1. Check Backpack first
+
+local backpackTool = LocalPlayer.Backpack:FindFirstChild(SACRIFICE_SWORD)
+
+if backpackTool then
+
+hum:EquipTool(backpackTool)
+
+print("[EQUIP] Apotheosis equipped directly from Backpack!")
+
+return
+
+end
+
+
+
+local targetModel = nil
+
+local targetPart = nil
+
+
+
+pcall(function()
+
+targetModel = workspace.Map["Sword Stands"].Apothesis.Apotheosis
+
+targetPart = targetModel.PrimaryPart or targetModel:FindFirstChildWhichIsA("BasePart", true)
+
+end)
+
+
+
+if targetModel and targetPart then
+
+print("[EQUIP] Teleporting directly ON the Apotheosis sword stand...")
+
+
+-- Clear physics states to prevent override
+
+root.Anchored = false
+
+root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+
+root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+
+
+
+-- Teleport directly using the stand's exact CFrame
+
+char:PivotTo(targetPart.CFrame)
+
+root.CFrame = targetPart.CFrame
+
+
+
+print("[EQUIP] Teleported successfully onto the stand.")
+
+else
+
+warn("[EQUIP] Could not resolve path workspace.Map['Sword Stands'].Apothesis.Apotheosis!")
+
+end
+
+end)
+
+
+
+DeleteButton.MouseButton1Click:Connect(function()
+
+running = false
+
+print("[AUTOFARM] Completely deleting script and cleaning up...")
+
+
+for _, conn in ipairs(activeConnections) do
+
+pcall(function() conn:Disconnect() end)
+
+end
+
+
+ScreenGui:Destroy()
+
+print("[AUTOFARM] Script successfully deleted and unloaded.")
+
+end)
+
+-- =================================================================
+
+
+
+-- Anti-AFK Kick Prevention
+
+local idledConn = LocalPlayer.Idled:Connect(function()
+
+if not running then return end
+
+VirtualUser:CaptureController()
+
+VirtualUser:ClickButton2(Vector2.new(0, 0))
+
+end)
+
+table.insert(activeConnections, idledConn)
+
+
+
+local function hasSwordEquipped()
+
+local char = LocalPlayer.Character
+
+if not char then return false end
+
+return char:FindFirstChild(SACRIFICE_SWORD) ~= nil
+
+end
+
+
+
+local function forceEquipSword()
+
+if not running then return nil end
+
+local char = LocalPlayer.Character
+
+local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+
+if not char or not backpack then return nil end
+
+
+local equippedTool = char:FindFirstChild(SACRIFICE_SWORD)
+
+if equippedTool then return equippedTool end
+
+
+local backpackTool = backpack:FindFirstChild(SACRIFICE_SWORD)
+
+if backpackTool then
+
+local hum = char:FindFirstChildOfClass("Humanoid")
+
+if hum then
+
+hum:EquipTool(backpackTool)
+
+task.wait(0.05)
+
+return char:FindFirstChild(SACRIFICE_SWORD)
+
+end
+
+end
+
+return nil
+
+end
+
+
+
+local function applyOverworldHitbox(tool)
+
+if not tool then return end
+
+for _, desc in ipairs(tool:GetDescendants()) do
+
+if desc:IsA("BasePart") then
+
+desc.Size = Vector3.new(MAP_HITBOX_SIZE, MAP_HITBOX_SIZE, MAP_HITBOX_SIZE)
+
+desc.CanCollide = false
+
+desc.Massless = true
+
+desc.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+
+
+if SHOW_HITBOX_VISUAL then
+
+desc.Transparency = 0.6
+
+desc.Color = Color3.fromRGB(200, 0, 255)
+
+desc.Material = Enum.Material.Neon
+
+else
+
+desc.Transparency = 1
+
+end
+
+end
+
+if desc:IsA("SpecialMesh") then
+
+desc.Scale = Vector3.new(MAP_HITBOX_SIZE, MAP_HITBOX_SIZE, MAP_HITBOX_SIZE)
+
+end
+
+end
+
+end
+
+
+
+local function checkHealthPhase(hum)
+
+if not hum then return "normal" end
+
+
+local hp = hum.Health
+
+local maxHp = hum.MaxHealth
+
+
+local isHpInf = (hp == math.huge or string.lower(tostring(hp)) == "inf" or hp > 1e18)
+
+local isMaxHpInf = (maxHp == math.huge or string.lower(tostring(maxHp)) == "inf" or maxHp > 1e18)
+
+
+local char = LocalPlayer.Character
+
+local tool = char and char:FindFirstChild(SACRIFICE_SWORD)
+
+local phaseValue = 0
+
+if tool then
+
+local phasesFolder = tool:FindFirstChild("Phases")
+
+if phasesFolder then
+
+local pNum = phasesFolder:FindFirstChild("Phase#")
+
+if pNum and pNum:IsA("ValueBase") then
+
+phaseValue = tonumber(pNum.Value) or 0
+
+end
+
+end
+
+end
+
+
+
+if phaseValue >= 5 or (isHpInf and isMaxHpInf and phaseValue > 4) then
+
+return "sacrifice"
+
+elseif isHpInf or isMaxHpInf or phaseValue == 4 then
+
+return "existential"
+
+end
+
+
+return "normal"
+
+end
+
+
+
+local function executeGuaranteedInteractions(targetPos)
+
+local startTime = tick()
+
+
+while tick() - startTime < 3.0 do
+
+safeTeleport(targetPos)
+
+
+for _, prompt in ipairs(workspace:GetDescendants()) do
+
+if prompt:IsA("ProximityPrompt") and prompt.Parent and prompt.Parent:IsA("BasePart") then
+
+if (targetPos - prompt.Parent.Position).Magnitude < 80 then
+
+prompt.RequiresLineOfSight = false
+
+prompt.MaxActivationDistance = 100
+
+
+if fireproximityprompt then
+
+fireproximityprompt(prompt)
+
+else
+
+prompt:InputHoldBegin()
+
+task.wait(prompt.HoldDuration + 0.05)
+
+prompt:InputHoldEnd()
+
+end
+
+end
+
+end
+
+end
+
+
+
+for _, desc in ipairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
+
+if desc:IsA("RemoteEvent") then
+
+local lowerName = string.lower(desc.Name)
+
+if string.find(lowerName, "sacrifice") or string.find(lowerName, "descension") or string.find(lowerName, "existential") then
+
+desc:FireServer()
+
+end
+
+end
+
+end
+
+
+task.wait(0.2)
+
+end
+
+end
+
+
+
+local function goToExistentialStage()
+
+if not running or existentialTriggered then return false end
+
+existentialTriggered = true
+
+
+
+print("[AUTOFARM] Infinite HP Detected! Teleporting to Existential Position...")
+
+executeGuaranteedInteractions(EXISTENTIAL_POSITION)
+
+return true
+
+end
+
+
+
+local function performAltarSacrifice()
+
+if not running or sacrificeTriggered then return false end
+
+sacrificeTriggered = true
+
+
+
+print("[AUTOFARM] Inf++ HP Detected! Executing Altar Sacrifice Sequence...")
+
+executeGuaranteedInteractions(SACRIFICE_POSITION)
+
+return true
+
+end
+
+
+
+local charAddedConn = LocalPlayer.CharacterAdded:Connect(function(char)
+
+existentialTriggered = false
+
+sacrificeTriggered = false
+
+arenaEntered = false
+
+
+local camera = workspace.CurrentCamera
+
+camera.CameraType = Enum.CameraType.Custom
+
+local hum = char:WaitForChild("Humanoid", 5)
+
+if hum then
+
+camera.CameraSubject = hum
+
+end
+
+
+if not running then return end
+
+startMainLoop()
+
+end)
+
+table.insert(activeConnections, charAddedConn)
+
+
+
+local renderConn = RunService.RenderStepped:Connect(function()
+
+local char = LocalPlayer.Character
+
+if char then
+
+local tool = char:FindFirstChild(SACRIFICE_SWORD)
+
+if tool then
+
+applyOverworldHitbox(tool)
+
+end
+
+end
+
+end)
+
+table.insert(activeConnections, renderConn)
+
+
+
+startMainLoop = function()
+
+if loopThread and coroutine.status(loopThread) ~= "dead" then
+
+return
+
+end
+
+
+
+loopThread = task.spawn(function()
+
+while ScreenGui and ScreenGui.Parent do
+
+if not running then
+
+task.wait(0.5)
+
+else
+
+local char = LocalPlayer.Character
+
+local root = char and char:FindFirstChild("HumanoidRootPart")
+
+local hum = char and char:FindFirstChildOfClass("Humanoid")
+
+
+
+if char and root and hum and hum.Health > 0 then
+
+if not arenaEntered then
+
+if hum.Health < 250000 and hasSwordEquipped() then
+
+print("[AUTOFARM] HP < 250k & Sword equipped! Entering Arena...")
+
+safeTeleport(ARENA_POSITION)
+
+arenaEntered = true
+
+task.wait(0.5)
+
+else
+
+local portal = workspace:FindFirstChild(ARENA_PORTAL_NAME, true) or workspace:FindFirstChild("Portal", true)
+
+if portal then
+
+local targetPart = portal:IsA("BasePart") and portal or portal:FindFirstChildWhichIsA("BasePart", true)
+
+if targetPart and (root.Position - targetPart.Position).Magnitude > 10 then
+
+root.CFrame = targetPart.CFrame * CFrame.new(0, 3, 0)
+
+end
+
+end
+
+
+if not hasSwordEquipped() then
+
+forceEquipSword()
+
+end
+
+task.wait(0.5)
+
+end
+
+else
+
+local tool = forceEquipSword()
+
+if tool then
+
+if autoSwingEnabled then
+
+tool:Activate()
+
+end
+
+
+
+local handle = tool:FindFirstChild("Handle") or tool:FindFirstChildWhichIsA("BasePart")
+
+if handle and firetouchinterest then
+
+for _, enemy in ipairs(workspace:GetChildren()) do
+
+local enemyRoot = enemy:FindFirstChild("HumanoidRootPart") or enemy:FindFirstChild("Head")
+
+if enemyRoot and enemy ~= char and (enemyRoot.Position - handle.Position).Magnitude <= (MAP_HITBOX_SIZE / 2) then
+
+firetouchinterest(handle, enemyRoot, 0)
+
+firetouchinterest(handle, enemyRoot, 1)
+
+end
+
+end
+
+end
+
+
+
+local currentPhase = checkHealthPhase(hum)
+
+
+
+if currentPhase == "sacrifice" and not sacrificeTriggered then
+
+performAltarSacrifice()
+
+elseif currentPhase == "existential" and not existentialTriggered then
+
+goToExistentialStage()
+
+end
+
+else
+
+task.wait(0.5)
+
+end
+
+end
+
+else
+
+task.wait(0.5)
+
+end
+
+task.wait(0.02)
+
+end
+
+end
+
+end)
+
+end here is start for our ksfu script same rayfiled with voide and yea its voide with tab Main and first tab will be Auto Farm Void Shards and with hitbox expander and with button equip apesthosis and alllocal CoreGui = game:GetService("CoreGui")
+
+local Players = game:GetService("Players")
+
+local RunService = game:GetService("RunService")
+
+local VirtualUser = game:GetService("VirtualUser")
+
+local LocalPlayer = Players.LocalPlayer
+
+
+
+-- =================================================================
+
+-- CONFIGURATION
+
+-- =================================================================
+
+local SACRIFICE_SWORD = "Apotheosis" -- Target weapon name
+
+local MAP_HITBOX_SIZE = 1500 -- Default Hitbox size
+
+
+
+-- EXACT HARDCODED POSITIONS
+
+local ARENA_POSITION = Vector3.new(249.2436981201172, 1101.5126953125, 132.23776245117188)
+
+local EXISTENTIAL_POSITION = Vector3.new(17.87982177734375, 51888.99609375, 247.1317901611328)
+
+local SACRIFICE_POSITION = Vector3.new(3908.892822265625, 1093.681640625, 9.674517631530762)
+
+
+
+local ARENA_PORTAL_NAME = "Portal" -- Portal fallback name
+
+local SHOW_HITBOX_VISUAL = false -- Starts OFF
+
+local autoSwingEnabled = true -- STARTS ON BY DEFAULT
+
+-- =================================================================
+
+
+
+-- Control and State Tracking (Starts Paused)
+
+local running = false
+
+local activeConnections = {}
+
+local existentialTriggered = false
+
+local sacrificeTriggered = false
+
+local arenaEntered = false
+
+local loopThread = nil
+
+
+
+-- =================================================================
+
+-- UI CREATION (Control Panel)
+
+-- =================================================================
+
+local ScreenGui = Instance.new("ScreenGui")
+
+ScreenGui.Name = "AutofarmControllerGUI"
+
+ScreenGui.ResetOnSpawn = false
+
+
+
+if protectgui then
+
+protectgui(ScreenGui)
+
+ScreenGui.Parent = CoreGui
+
+else
+
+local success, err = pcall(function()
+
+ScreenGui.Parent = CoreGui
+
+end)
+
+if not success then
+
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+end
+
+end
+
+
+
+local Frame = Instance.new("Frame", ScreenGui)
+
+Frame.Size = UDim2.new(0, 180, 0, 275)
+
+Frame.Position = UDim2.new(0.05, 0, 0.2, 0)
+
+Frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+
+Frame.BorderSizePixel = 0
+
+Frame.Active = true
+
+Frame.Draggable = true
+
+
+
+local UICorner = Instance.new("UICorner", Frame)
+
+UICorner.CornerRadius = UDim.new(0, 6)
+
+
+
+-- 1. Toggle Button (Starts OFF -> Green START button)
+
+local ToggleButton = Instance.new("TextButton", Frame)
+
+ToggleButton.Size = UDim2.new(0.9, 0, 0, 30)
+
+ToggleButton.Position = UDim2.new(0.05, 0, 0.04, 0)
+
+ToggleButton.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
+
+ToggleButton.Text = "START"
+
+ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+ToggleButton.Font = Enum.Font.SourceSansBold
+
+ToggleButton.TextSize = 14
+
+
+
+local ToggleCorner = Instance.new("UICorner", ToggleButton)
+
+ToggleCorner.CornerRadius = UDim.new(0, 4)
+
+
+
+-- 2. Visual Toggle Button (Starts OFF)
+
+local VisualButton = Instance.new("TextButton", Frame)
+
+VisualButton.Size = UDim2.new(0.9, 0, 0, 30)
+
+VisualButton.Position = UDim2.new(0.05, 0, 0.19, 0)
+
+VisualButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+
+VisualButton.Text = "VISUAL: OFF"
+
+VisualButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+VisualButton.Font = Enum.Font.SourceSansBold
+
+VisualButton.TextSize = 14
+
+
+
+local VisualCorner = Instance.new("UICorner", VisualButton)
+
+VisualCorner.CornerRadius = UDim.new(0, 4)
+
+
+
+-- 3. Auto Swing Toggle Button (Starts ON)
+
+local SwingButton = Instance.new("TextButton", Frame)
+
+SwingButton.Size = UDim2.new(0.9, 0, 0, 30)
+
+SwingButton.Position = UDim2.new(0.05, 0, 0.35, 0)
+
+SwingButton.BackgroundColor3 = Color3.fromRGB(40, 120, 200)
+
+SwingButton.Text = "SWING: ON"
+
+SwingButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+SwingButton.Font = Enum.Font.SourceSansBold
+
+SwingButton.TextSize = 14
+
+
+
+local SwingCorner = Instance.new("UICorner", SwingButton)
+
+SwingCorner.CornerRadius = UDim.new(0, 4)
+
+
+
+-- 4. Hitbox Size Input Box
+
+local SizeBox = Instance.new("TextBox", Frame)
+
+SizeBox.Size = UDim2.new(0.9, 0, 0, 30)
+
+SizeBox.Position = UDim2.new(0.05, 0, 0.51, 0)
+
+SizeBox.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+
+SizeBox.Text = tostring(MAP_HITBOX_SIZE)
+
+SizeBox.PlaceholderText = "Hitbox Size"
+
+SizeBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+SizeBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+
+SizeBox.Font = Enum.Font.SourceSansBold
+
+SizeBox.TextSize = 14
+
+SizeBox.ClearTextOnFocus = false
+
+
+
+local SizeCorner = Instance.new("UICorner", SizeBox)
+
+SizeCorner.CornerRadius = UDim.new(0, 4)
+
+
+
+-- 5. Equip Apotheosis Button
+
+local EquipButton = Instance.new("TextButton", Frame)
+
+EquipButton.Size = UDim2.new(0.9, 0, 0, 30)
+
+EquipButton.Position = UDim2.new(0.05, 0, 0.67, 0)
+
+EquipButton.BackgroundColor3 = Color3.fromRGB(180, 120, 20)
+
+EquipButton.Text = "EQUIP APOTHEOSIS"
+
+EquipButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+EquipButton.Font = Enum.Font.SourceSansBold
+
+EquipButton.TextSize = 12
+
+
+
+local EquipCorner = Instance.new("UICorner", EquipButton)
+
+EquipCorner.CornerRadius = UDim.new(0, 4)
+
+
+
+-- 6. Delete Button
+
+local DeleteButton = Instance.new("TextButton", Frame)
+
+DeleteButton.Size = UDim2.new(0.9, 0, 0, 30)
+
+DeleteButton.Position = UDim2.new(0.05, 0, 0.83, 0)
+
+DeleteButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+
+DeleteButton.Text = "DELETE"
+
+DeleteButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+DeleteButton.Font = Enum.Font.SourceSansBold
+
+DeleteButton.TextSize = 14
+
+
+
+local DeleteCorner = Instance.new("UICorner", DeleteButton)
+
+DeleteCorner.CornerRadius = UDim.new(0, 4)
+
+
+
+local startMainLoop
+
+local safeTeleport
+
+
+
+safeTeleport = function(targetPosition)
+
+local char = LocalPlayer.Character
+
+if not char then return end
+
+local root = char:FindFirstChild("HumanoidRootPart")
+
+if not root then return end
+
+
+
+root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+
+root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+
+
+
+root.CFrame = CFrame.new(targetPosition)
+
+char:PivotTo(CFrame.new(targetPosition))
+
+
+local camera = workspace.CurrentCamera
+
+camera.CameraType = Enum.CameraType.Custom
+
+if char:FindFirstChildOfClass("Humanoid") then
+
+camera.CameraSubject = char:FindFirstChildOfClass("Humanoid")
+
+end
+
+end
+
+
+
+ToggleButton.MouseButton1Click:Connect(function()
+
+running = not running
+
+if running then
+
+ToggleButton.Text = "STOP"
+
+ToggleButton.BackgroundColor3 = Color3.fromRGB(200, 40, 40)
+
+print("[AUTOFARM] Resumed.")
+
+startMainLoop()
+
+else
+
+ToggleButton.Text = "START"
+
+ToggleButton.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
+
+print("[AUTOFARM] Paused.")
+
+end
+
+end)
+
+
+
+VisualButton.MouseButton1Click:Connect(function()
+
+SHOW_HITBOX_VISUAL = not SHOW_HITBOX_VISUAL
+
+if SHOW_HITBOX_VISUAL then
+
+VisualButton.Text = "VISUAL: ON"
+
+VisualButton.BackgroundColor3 = Color3.fromRGB(150, 40, 200)
+
+else
+
+VisualButton.Text = "VISUAL: OFF"
+
+VisualButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+
+end
+
+print("[AUTOFARM] Hitbox Visual set to: " .. tostring(SHOW_HITBOX_VISUAL))
+
+end)
+
+
+
+SwingButton.MouseButton1Click:Connect(function()
+
+autoSwingEnabled = not autoSwingEnabled
+
+if autoSwingEnabled then
+
+SwingButton.Text = "SWING: ON"
+
+SwingButton.BackgroundColor3 = Color3.fromRGB(40, 120, 200)
+
+else
+
+SwingButton.Text = "SWING: OFF"
+
+SwingButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+
+end
+
+print("[AUTOFARM] Auto Swing set to: " .. tostring(autoSwingEnabled))
+
+end)
+
+
+
+SizeBox.FocusLost:Connect(function(enterPressed)
+
+local newSize = tonumber(SizeBox.Text)
+
+if newSize and newSize > 0 then
+
+MAP_HITBOX_SIZE = newSize
+
+print("[AUTOFARM] Hitbox Size updated to: " .. tostring(MAP_HITBOX_SIZE))
+
+else
+
+SizeBox.Text = tostring(MAP_HITBOX_SIZE)
+
+end
+
+end)
+
+
+
+-- DIRECT ON-SWORD TELEPORT HANDLER
+
+EquipButton.MouseButton1Click:Connect(function()
+
+local char = LocalPlayer.Character
+
+if not char then return end
+
+local root = char:FindFirstChild("HumanoidRootPart")
+
+local hum = char:FindFirstChildOfClass("Humanoid")
+
+if not root or not hum then return end
+
+
+
+-- 1. Check Backpack first
+
+local backpackTool = LocalPlayer.Backpack:FindFirstChild(SACRIFICE_SWORD)
+
+if backpackTool then
+
+hum:EquipTool(backpackTool)
+
+print("[EQUIP] Apotheosis equipped directly from Backpack!")
+
+return
+
+end
+
+
+
+local targetModel = nil
+
+local targetPart = nil
+
+
+
+pcall(function()
+
+targetModel = workspace.Map["Sword Stands"].Apothesis.Apotheosis
+
+targetPart = targetModel.PrimaryPart or targetModel:FindFirstChildWhichIsA("BasePart", true)
+
+end)
+
+
+
+if targetModel and targetPart then
+
+print("[EQUIP] Teleporting directly ON the Apotheosis sword stand...")
+
+
+-- Clear physics states to prevent override
+
+root.Anchored = false
+
+root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+
+root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+
+
+
+-- Teleport directly using the stand's exact CFrame
+
+char:PivotTo(targetPart.CFrame)
+
+root.CFrame = targetPart.CFrame
+
+
+
+print("[EQUIP] Teleported successfully onto the stand.")
+
+else
+
+warn("[EQUIP] Could not resolve path workspace.Map['Sword Stands'].Apothesis.Apotheosis!")
+
+end
+
+end)
+
+
+
+DeleteButton.MouseButton1Click:Connect(function()
+
+running = false
+
+print("[AUTOFARM] Completely deleting script and cleaning up...")
+
+
+for _, conn in ipairs(activeConnections) do
+
+pcall(function() conn:Disconnect() end)
+
+end
+
+
+ScreenGui:Destroy()
+
+print("[AUTOFARM] Script successfully deleted and unloaded.")
+
+end)
+
+-- =================================================================
+
+
+
+-- Anti-AFK Kick Prevention
+
+local idledConn = LocalPlayer.Idled:Connect(function()
+
+if not running then return end
+
+VirtualUser:CaptureController()
+
+VirtualUser:ClickButton2(Vector2.new(0, 0))
+
+end)
+
+table.insert(activeConnections, idledConn)
+
+
+
+local function hasSwordEquipped()
+
+local char = LocalPlayer.Character
+
+if not char then return false end
+
+return char:FindFirstChild(SACRIFICE_SWORD) ~= nil
+
+end
+
+
+
+local function forceEquipSword()
+
+if not running then return nil end
+
+local char = LocalPlayer.Character
+
+local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+
+if not char or not backpack then return nil end
+
+
+local equippedTool = char:FindFirstChild(SACRIFICE_SWORD)
+
+if equippedTool then return equippedTool end
+
+
+local backpackTool = backpack:FindFirstChild(SACRIFICE_SWORD)
+
+if backpackTool then
+
+local hum = char:FindFirstChildOfClass("Humanoid")
+
+if hum then
+
+hum:EquipTool(backpackTool)
+
+task.wait(0.05)
+
+return char:FindFirstChild(SACRIFICE_SWORD)
+
+end
+
+end
+
+return nil
+
+end
+
+
+
+local function applyOverworldHitbox(tool)
+
+if not tool then return end
+
+for _, desc in ipairs(tool:GetDescendants()) do
+
+if desc:IsA("BasePart") then
+
+desc.Size = Vector3.new(MAP_HITBOX_SIZE, MAP_HITBOX_SIZE, MAP_HITBOX_SIZE)
+
+desc.CanCollide = false
+
+desc.Massless = true
+
+desc.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+
+
+if SHOW_HITBOX_VISUAL then
+
+desc.Transparency = 0.6
+
+desc.Color = Color3.fromRGB(200, 0, 255)
+
+desc.Material = Enum.Material.Neon
+
+else
+
+desc.Transparency = 1
+
+end
+
+end
+
+if desc:IsA("SpecialMesh") then
+
+desc.Scale = Vector3.new(MAP_HITBOX_SIZE, MAP_HITBOX_SIZE, MAP_HITBOX_SIZE)
+
+end
+
+end
+
+end
+
+
+
+local function checkHealthPhase(hum)
+
+if not hum then return "normal" end
+
+
+local hp = hum.Health
+
+local maxHp = hum.MaxHealth
+
+
+local isHpInf = (hp == math.huge or string.lower(tostring(hp)) == "inf" or hp > 1e18)
+
+local isMaxHpInf = (maxHp == math.huge or string.lower(tostring(maxHp)) == "inf" or maxHp > 1e18)
+
+
+local char = LocalPlayer.Character
+
+local tool = char and char:FindFirstChild(SACRIFICE_SWORD)
+
+local phaseValue = 0
+
+if tool then
+
+local phasesFolder = tool:FindFirstChild("Phases")
+
+if phasesFolder then
+
+local pNum = phasesFolder:FindFirstChild("Phase#")
+
+if pNum and pNum:IsA("ValueBase") then
+
+phaseValue = tonumber(pNum.Value) or 0
+
+end
+
+end
+
+end
+
+
+
+if phaseValue >= 5 or (isHpInf and isMaxHpInf and phaseValue > 4) then
+
+return "sacrifice"
+
+elseif isHpInf or isMaxHpInf or phaseValue == 4 then
+
+return "existential"
+
+end
+
+
+return "normal"
+
+end
+
+
+
+local function executeGuaranteedInteractions(targetPos)
+
+local startTime = tick()
+
+
+while tick() - startTime < 3.0 do
+
+safeTeleport(targetPos)
+
+
+for _, prompt in ipairs(workspace:GetDescendants()) do
+
+if prompt:IsA("ProximityPrompt") and prompt.Parent and prompt.Parent:IsA("BasePart") then
+
+if (targetPos - prompt.Parent.Position).Magnitude < 80 then
+
+prompt.RequiresLineOfSight = false
+
+prompt.MaxActivationDistance = 100
+
+
+if fireproximityprompt then
+
+fireproximityprompt(prompt)
+
+else
+
+prompt:InputHoldBegin()
+
+task.wait(prompt.HoldDuration + 0.05)
+
+prompt:InputHoldEnd()
+
+end
+
+end
+
+end
+
+end
+
+
+
+for _, desc in ipairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
+
+if desc:IsA("RemoteEvent") then
+
+local lowerName = string.lower(desc.Name)
+
+if string.find(lowerName, "sacrifice") or string.find(lowerName, "descension") or string.find(lowerName, "existential") then
+
+desc:FireServer()
+
+end
+
+end
+
+end
+
+
+task.wait(0.2)
+
+end
+
+end
+
+
+
+local function goToExistentialStage()
+
+if not running or existentialTriggered then return false end
+
+existentialTriggered = true
+
+
+
+print("[AUTOFARM] Infinite HP Detected! Teleporting to Existential Position...")
+
+executeGuaranteedInteractions(EXISTENTIAL_POSITION)
+
+return true
+
+end
+
+
+
+local function performAltarSacrifice()
+
+if not running or sacrificeTriggered then return false end
+
+sacrificeTriggered = true
+
+
+
+print("[AUTOFARM] Inf++ HP Detected! Executing Altar Sacrifice Sequence...")
+
+executeGuaranteedInteractions(SACRIFICE_POSITION)
+
+return true
+
+end
+
+
+
+local charAddedConn = LocalPlayer.CharacterAdded:Connect(function(char)
+
+existentialTriggered = false
+
+sacrificeTriggered = false
+
+arenaEntered = false
+
+
+local camera = workspace.CurrentCamera
+
+camera.CameraType = Enum.CameraType.Custom
+
+local hum = char:WaitForChild("Humanoid", 5)
+
+if hum then
+
+camera.CameraSubject = hum
+
+end
+
+
+if not running then return end
+
+startMainLoop()
+
+end)
+
+table.insert(activeConnections, charAddedConn)
+
+
+
+local renderConn = RunService.RenderStepped:Connect(function()
+
+local char = LocalPlayer.Character
+
+if char then
+
+local tool = char:FindFirstChild(SACRIFICE_SWORD)
+
+if tool then
+
+applyOverworldHitbox(tool)
+
+end
+
+end
+
+end)
+
+table.insert(activeConnections, renderConn)
+
+
+
+startMainLoop = function()
+
+if loopThread and coroutine.status(loopThread) ~= "dead" then
+
+return
+
+end
+
+
+
+loopThread = task.spawn(function()
+
+while ScreenGui and ScreenGui.Parent do
+
+if not running then
+
+task.wait(0.5)
+
+else
+
+local char = LocalPlayer.Character
+
+local root = char and char:FindFirstChild("HumanoidRootPart")
+
+local hum = char and char:FindFirstChildOfClass("Humanoid")
+
+
+
+if char and root and hum and hum.Health > 0 then
+
+if not arenaEntered then
+
+if hum.Health < 250000 and hasSwordEquipped() then
+
+print("[AUTOFARM] HP < 250k & Sword equipped! Entering Arena...")
+
+safeTeleport(ARENA_POSITION)
+
+arenaEntered = true
+
+task.wait(0.5)
+
+else
+
+local portal = workspace:FindFirstChild(ARENA_PORTAL_NAME, true) or workspace:FindFirstChild("Portal", true)
+
+if portal then
+
+local targetPart = portal:IsA("BasePart") and portal or portal:FindFirstChildWhichIsA("BasePart", true)
+
+if targetPart and (root.Position - targetPart.Position).Magnitude > 10 then
+
+root.CFrame = targetPart.CFrame * CFrame.new(0, 3, 0)
+
+end
+
+end
+
+
+if not hasSwordEquipped() then
+
+forceEquipSword()
+
+end
+
+task.wait(0.5)
+
+end
+
+else
+
+local tool = forceEquipSword()
+
+if tool then
+
+if autoSwingEnabled then
+
+tool:Activate()
+
+end
+
+
+
+local handle = tool:FindFirstChild("Handle") or tool:FindFirstChildWhichIsA("BasePart")
+
+if handle and firetouchinterest then
+
+for _, enemy in ipairs(workspace:GetChildren()) do
+
+local enemyRoot = enemy:FindFirstChild("HumanoidRootPart") or enemy:FindFirstChild("Head")
+
+if enemyRoot and enemy ~= char and (enemyRoot.Position - handle.Position).Magnitude <= (MAP_HITBOX_SIZE / 2) then
+
+firetouchinterest(handle, enemyRoot, 0)
+
+firetouchinterest(handle, enemyRoot, 1)
+
+end
+
+end
+
+end
+
+
+
+local currentPhase = checkHealthPhase(hum)
+
+
+
+if currentPhase == "sacrifice" and not sacrificeTriggered then
+
+performAltarSacrifice()
+
+elseif currentPhase == "existential" and not existentialTriggered then
+
+goToExistentialStage()
+
+end
+
+else
+
+task.wait(0.5)
+
+end
+
+end
+
+else
+
+task.wait(0.5)
+
+end
+
+task.wait(0.02)
+
+end
+
+end
+
+end)
+
+end
